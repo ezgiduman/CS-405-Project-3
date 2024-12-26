@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solar System Simulation</title>
+
+    
+    <script type="text/javascript" src="src/obj.js"></script>
+    <script type="text/javascript" src="src/trs.js"></script>
+    <script type="text/javascript" src="src/meshDrawer.js"></script>
+    <script type="text/javascript" src="src/sceneNode.js"></script>
+    <script type="text/javascript" src="src/sphere.js"></script>
+    <script type="text/javascript" src="src/camera.js"></script>
+    <script type="text/javascript" src="src/perspective.js"></script>
+
+    <script type="text/javascript">
+        
+        var gl, canvas, camera, perspective;
+        var sunNode, earthNode, moonNode, marsNode;
+
+        function InitWebGL() {
+            canvas = document.getElementById("canvas");
+            gl = canvas.getContext("webgl");
+            if (!gl) {
+                alert("WebGL is not supported on this browser.");
+                return;
+            }
+            gl.clearColor(0, 0, 0, 1);
+            gl.enable(gl.DEPTH_TEST);
+        }
+
+       
+        function isPowerOf2(value) {
+            return (value & (value - 1)) === 0;
+        }
+
+      
+        function MatrixMult(A, B) {
+            let C = [];
+            for (let i = 0; i < 4; ++i) {
+                for (let j = 0; j < 4; ++j) {
+                    let value = 0;
+                    for (let k = 0; k < 4; ++k) {
+                        value += A[j + 4 * k] * B[k + 4 * i];
+                    }
+                    C.push(value);
+                }
+            }
+            return C;
+        }
+
+       
+        function  normalize(v) 
+        {
+            const length = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+            if (length > 0.00001) {
+                return [v[0] / length, v[1] / length, v[2] / length];
+            } else {
+                return [0, 0, 0];
+            }
+        }
+
+        function subtract(a, b) {
+            return [
+                a[0] - b[0],
+                a[1] - b[1],
+                a[2] - b[2]
+            ];
+        }
+
+      
+        function cross(a, b) {
+            return [
+                a[1] * b[2] - a[2] * b[1],
+                a[2] * b[0] - a[0] * b[2],
+                a[0] * b[1] - a[1] * b[0]
+            ];
+        }
+
+        
+        function InitShaderProgram(vsSource, fsSource) {
+            const vertexShader = CompileShader(gl.VERTEX_SHADER, vsSource);
+            const fragmentShader = CompileShader(gl.FRAGMENT_SHADER, fsSource);
+            const shaderProgram = gl.createProgram();
+
+            gl.attachShader(shaderProgram, vertexShader);
+            gl.attachShader(shaderProgram, fragmentShader);
+            gl.linkProgram(shaderProgram);
+
+            if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+                console.error('Unable to initialize the shader program:', gl.getProgramInfoLog(shaderProgram));
+                return null;
+            }
+            return shaderProgram;
+        }
+
+        function CompileShader(type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+     
+        function UpdateCanvasSize() {
+            canvas.style.width = "100%";
+            canvas.style.height = "100%";
+            const pixelRatio = window.devicePixelRatio || 1;
+            canvas.width = pixelRatio * canvas.clientWidth;
+            canvas.height = pixelRatio * canvas.clientHeight;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        }
+
+        function setTextureImg(meshDrawer, imgUrl) {
+            let img = new Image();
+            img.crossOrigin = "anonymous";
+            img.src = imgUrl;
+            img.onload = function () {
+                meshDrawer.setTexture(img);
+            };
+        }
+
+     
+        function renderLoop() {
+            UpdateCanvasSize();
+            const time = Date.now() / 1000;
+            const zRotation = (time * 40) * Math.PI / 180;
+
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+            const modelMatrix = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+            const modelViewMatrix = MatrixMult(camera.getLookAt(), modelMatrix);
+            const mvp = MatrixMult(perspective.getPerspectiveMatrix(), modelViewMatrix);
+            const normalMatrix = modelMatrix;
+
+          
+            sunNode.trs.setRotation(0, 0, zRotation);
+            earthNode.trs.setRotation(0, 0, zRotation * 2);
+            marsNode.trs.setRotation(0, 0, zRotation * 1.5);
+
+            sunNode.draw(mvp, modelViewMatrix, normalMatrix, modelMatrix);
+            requestAnimationFrame(renderLoop);
+        }
+
+       
+        window.onload = function () {
+            InitWebGL();
+            UpdateCanvasSize();
+
+            sphereMesh = new ObjMesh();
+            sphereMesh.parse(sphere);
+            sphereBuffers = sphereMesh.getVertexBuffers();
+
+            camera = new Camera([0, 0, -1], [0, 0, 1], [0, 1, 0]);
+            perspective = new Perspective(Math.PI / 2, canvas.width / canvas.height, 1, 500);
+
+       
+            let sunMeshDrawer = new MeshDrawer(true);
+            sunMeshDrawer.setMesh(sphereBuffers.positionBuffer, sphereBuffers.texCoordBuffer, sphereBuffers.normalBuffer);
+            setTextureImg(sunMeshDrawer, "https://i.imgur.com/gl8zBLI.jpg");
+            const sunTrs = new TRS();
+            sunTrs.setTranslation(0, 0, 5);
+            sunTrs.setScale(0.8, 0.8, 0.8);
+            sunNode = new SceneNode(sunMeshDrawer, sunTrs);
+
+    
+            let earthMeshDrawer = new MeshDrawer();
+            earthMeshDrawer.setMesh(sphereBuffers.positionBuffer, sphereBuffers.texCoordBuffer, sphereBuffers.normalBuffer);
+            setTextureImg(earthMeshDrawer, "https://i.imgur.com/eCpD7bM.jpg");
+            const earthTrs = new TRS();
+            earthTrs.setTranslation(3, 0, 0);
+            earthTrs.setScale(0.5, 0.5, 0.5);
+            earthNode = new SceneNode(earthMeshDrawer, earthTrs, sunNode);
+
+         
+            let moonMeshDrawer = new MeshDrawer();
+            moonMeshDrawer.setMesh(sphereBuffers.positionBuffer, sphereBuffers.texCoordBuffer, sphereBuffers.normalBuffer);
+            setTextureImg(moonMeshDrawer, "https://i.imgur.com/oLiU4fm.jpg");
+            const moonTrs = new TRS();
+            moonTrs.setTranslation(2.0, 0, 0);
+            moonTrs.setScale(0.25, 0.25, 0.25);
+            moonNode = new SceneNode(moonMeshDrawer, moonTrs, earthNode);
+
+            let marsMeshDrawer = new MeshDrawer();
+            marsMeshDrawer.setMesh(sphereBuffers.positionBuffer, sphereBuffers.texCoordBuffer, sphereBuffers.normalBuffer);
+            setTextureImg(marsMeshDrawer, "https://i.imgur.com/Mwsa16j.jpeg");
+            const marsTrs = new TRS();
+            marsTrs.setTranslation(-6, 0, 0);
+            marsTrs.setScale(0.35, 0.35, 0.35);
+            marsNode = new SceneNode(marsMeshDrawer, marsTrs, sunNode);
+
+            renderLoop();
+        };
+
+        window.onresize = function () {
+            UpdateCanvasSize();
+        };
+    </script>
+
+    <style>
+        html, body, canvas {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        canvas {
+            display: block;
+            background: black;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+</body>
+
+</html>
